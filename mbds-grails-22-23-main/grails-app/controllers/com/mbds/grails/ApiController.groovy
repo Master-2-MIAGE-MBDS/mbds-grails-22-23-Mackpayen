@@ -1,387 +1,249 @@
 package com.mbds.grails
 
+import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonAnyFormatVisitor
 import grails.converters.JSON
 import grails.converters.XML
+import grails.plugin.springsecurity.SpringSecurityService
 import grails.plugin.springsecurity.annotation.Secured
+import jdk.nashorn.internal.runtime.UserAccessorProperty
 import org.springframework.http.HttpMethod
 
-@Secured('ROLE_ADMIN')
+
+@Secured(['ROLE_ADMIN', 'ROLE_CLIENT'])
 class ApiController {
+    UserService  userService;
+    UserApiService userApiService;
+    AnnonceService annonceService;
+    AnnonceApiService annonceApiService;
 
-    def index() {}
-    // CRUD USER
-    // Methods: GET, PUT, DELETE, PATCH
-    def user() {
-        switch (request.getMethod()) {
-            case "GET":
-                if (!params.id)
-                    return response.status = 400
-                def userInstance = User.get(params.id)
-                if (!userInstance)
-                    return response.status = 404
-                withFormat {
-                    json { render userInstance as JSON }
-                    xml { render userInstance as XML }
-                }
-                break
+    SpringSecurityService springSecurityService
 
-            case "PUT":
-                if (!params.id)
-                    return response.status = 400
-                def oldUser = User.get(params.id);
-                oldUser.properties = request.JSON;
+    /**
+     * Gestion des points d'entrée de l'application : GET / PUT / PATCH / DELETE
+     */
 
-                if (oldUser.save(flush: true)) {
-                    response.status = 200 // OK
-                    render oldUser as JSON
-                } else {
-                    response.status = 500 //Internal Server Error
-                    render "Could not create new User due to errors:\n ${oldUser.errors}"
-                }
-                break
-            case "PATCH":
-                break
-            case "DELETE":
-                if (!params.id)
-                    return response.status = 400
-                else {
-                    UserRole.removeAll(User.get(params.id))
-                    def userInstance = User.get(params.id)
-                    userInstance.delete(flush: true)
-                    return response.status = 200
-                }
-                break
-            default:
-                return response.status = 405
-                break
-        }
-        return response.status = 406
-    }
-    // Methods: GET All, POST
-    def users() {
-        switch (request.getMethod()) {
-            case "POST":
-                def user = new User(request.JSON)
-                if (user.save()) {
-                    def adminRole = new Role(authority: "ROLE_ADMIN").save()
-                    UserRole.create(user, adminRole, true)
-                    response.status = 201 // Created
-                    render user as JSON
-                } else {
-                    response.status = 500
-                    // Internal Server Error
-                    render "Could not create new User due to errors:\n ${user.errors} \n ${params.user}"
-                }
-                break
-            case "GET":
-                def user = new User(request.JSON)
-                def userInstance = User.findAll()
-                if (!userInstance)
-                    return response.status = 404
-                withFormat {
-                    json { render userInstance as JSON }
-                    xml { render userInstance as XML }
-                }
-                break
-
-        }
-    }
-    // Get User by Username
-    def getUserByUserName(){
-        switch (request.getMethod()) {
-            case "GET":
-                if (!params.id)
-                    return response.status = 400
-                def userInstance = User.findByUsername(params.id)
-                if (!userInstance)
-                    return response.status = 404
-                withFormat {
-                    json { render userInstance as JSON }
-                    xml { render userInstance as XML }
-                }
-                break
-            default:
-                return response.status = 405
-                break
-        }
-        return response.status = 406
-    }
-
-    // CRUD Roles
-
-    // Add Role To User
-    def addRoleToUser() {
-        switch (request.getMethod()) {
-            case "POST":
-                if (!params.id)
-                    return response.status = 400
-                def user = User.get(params.id)
-                if (user) {
-                    def role = new Role(request.JSON)
-                    UserRole.create(user, Role.findByAuthority(role.getAuthority()), true)
-                    println(role)
-                    println(user)
-                    response.status = 201 // Created
-                } else {
-                    response.status = 500
-                    // Internal Server Error
-                    render "Could not create new User due to errors:\n ${user.errors} \n ${params.user}"
-                }
-                break
-
-        }
-    }
-    // delete Role to User
-    def deleteRoleToUser() {
-        switch (request.getMethod()) {
-            case "POST":
-                if (!params.id)
-                    return response.status = 400
-                def user = User.get(params.id)
-                if (user) {
-                    def role = new Role(request.JSON)
-                    UserRole.remove(user, Role.findByAuthority(role.getAuthority()))
-                    response.status = 201 // Deleted
-                } else {
-                    response.status = 500
-                    // Internal Server Error
-                    render "Could not Delete RoleUser due to errors:\n ${user.errors} \n ${params.user}"
-                }
-                break
-
-        }
-    }
-
-    // Get All Role By Id
-    def rolesById() {
-        switch (request.getMethod()) {
-            case "GET":
-                if (!params.id)
-                    return response.status = 400
-                def roles = Role.findById(params.id)
-
-                if (!roles)
-                    return response.status = 404
-                withFormat {
-                    json { render roles as JSON }
-                    xml { render roles as XML }
-                }
-                break
-            default:
-                return response.status = 405
-                break
-        }
-        return response.status = 406
-    }
-    //  Get All Role By User
-    def rolesByUser() {
-        switch (request.getMethod()) {
-            case "GET":
-                if (!params.id)
-                    return response.status = 400
-                def roles = UserRole.findAllByUser(User.findById(params.id)).role
-
-                if (!roles)
-                    return response.status = 404
-                withFormat {
-                    json { render roles as JSON }
-                    xml { render roles as XML }
-                }
-                break
-            default:
-                return response.status = 405
-                break
-        }
-        return response.status = 406
-    }
-    // Get Roles Unused by User
-    def roleUnusedByUser() {
-        switch (request.getMethod()) {
-            case "GET":
-                if (!params.id)
-                    return response.status = 400
-                def roles = UserRole.findAllByUser(User.findById(params.id)).role
-                print(roles)
-                List<Role> listRole = new ArrayList<>()
-                for (Role r : Role.findAll()) {
-                    if (!roles.contains(r)) listRole.add(r)
-                }
-                if (!listRole)
-                    return response.status = 404
-                withFormat {
-                    json { render listRole as JSON }
-                    xml { render listRole as XML }
-                }
-                break
-            default:
-                return response.status = 405
-                break
-        }
-        return response.status = 406
-    }
-
-    // CRUD Annonce
-    // Chart.js
-    def getCountAnnonceByUser() {
-        switch (request.getMethod()) {
-            case "GET":
-                def res = User.executeQuery(
-                        "SELECT u.username, count(*) as ct FROM User u join u.annonces s group by u.username"
-                )
-                if (!res)
-                    return response.status = 404
-                withFormat {
-                    json { render res as JSON }
-                    xml { render res as XML }
-                }
-                break
-            default:
-                return response.status = 405
-                break
-        }
-        return response.status = 406
-    }
-
-    // Get annonce By User
-    def annonceByUser() {
-        switch (request.getMethod()) {
-            case "GET":
-                if (!params.id)
-                    return response.status = 400
-                def annonce = User.findById(params.id).annonces.findAll()
-                if (!annonce)
-                    return response.status = 404
-                withFormat {
-                    json { render annonce as JSON }
-                    xml { render annonce as XML }
-                }
-                break
-            default:
-                return response.status = 405
-                break
-        }
-        return response.status = 406
-    }
-    // Methods: GET, PUT, DELETE, PATCH
     def annonce() {
+        User currentUser = springSecurityService.getCurrentUser()
+        Role role = currentUser.getAuthorities()[0]
+        if (!params.id)
+            return response.status = 400
+        // On vérifie que l'id corresponde bien à une instance existante
+        def annonceInstance = annonceService.get(params.id)
+        if (!annonceInstance)
+            return response.status = 404
+
         switch (request.getMethod()) {
+
             case "GET":
-                if (!params.id)
-                    return response.status = 400
-                def annonceInstance = Annonce.get(params.id)
-                if (!annonceInstance)
-                    return response.status = 404
-                withFormat {
-                    json { render annonceInstance as JSON }
-                    xml { render annonceInstance as XML }
-                }
-                break
+                renderThis(request.getHeader("Accept"), annonceInstance)
+                break;
+
             case "PUT":
-                if (!params.id)
-                    return response.status = 400
-                def oldAnnonce = Annonce.get(params.id);
-                oldAnnonce.properties = request.JSON;
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR'
+                        || currentUser != annonceInstance.getAuthor()) {
+                    return response.status = 401
+                }
+                def annonceJsonPut = JSON.parse(request);
+                int result = annonceApiService.put(annonceInstance, annonceJsonPut)
+                return response.status = result
+                break;
 
-                if (oldAnnonce.save(flush: true)) {
-                    response.status = 200 // OK
-                    render oldAnnonce as JSON
-                } else {
-                    response.status = 500 //Internal Server Error
-                    render "Could not Update new Annonce due to errors:\n ${oldAnnonce.errors}"
+            case "PATCH":
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR'
+                        || currentUser != annonceInstance.getAuthor()) {
+                    return response.status = 401
                 }
-                break
+                def annonceJsonPatch = JSON.parse(request);
+                int result = annonceApiService.patch(annonceInstance, annonceJsonPatch)
+                return response.status = result
+                break;
             case "DELETE":
-                if (!params.id)
-                    return response.status = 400
-                else {
-                    def annonceInstance = Annonce.get(params.id)
-                    annonceInstance.delete(flush: true)
-                    return response.status = 200
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR'
+                        || currentUser != annonceInstance.getAuthor()) {
+                    return response.status = 401
                 }
-                break
+                annonceInstance.delete(flush: true)
+                return response.status = 200
+                break;
             default:
                 return response.status = 405
-                break
+                break;
         }
         return response.status = 406
     }
-    // Methods: GET All, POST, DELETE, PATCH
+
+    /**
+     * Gestion d'un User ( GET, PUT, PATCH, DELETE ) à partir de l'API
+     */
+    def user() {
+        User currentUser = springSecurityService.getCurrentUser()
+        Role role = currentUser.getAuthorities()[0]
+
+        // Vérification que l'identifiant a bien été renseigné
+
+        if (!params.id)
+            return response.status = 400
+
+        def userId = params.id
+        def userInstance = User.get(userId)
+        if (!userInstance)
+            return response.status = 404
+
+        switch (request.getMethod()) {
+
+            case "GET":
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR'
+                        || currentUser != userInstance.getUsername()) {
+                    return response.status = 401
+                }
+                renderThis(request.getHeader("Accept"), userInstance)
+                break;
+            case "PUT":
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR'
+                        || currentUser != userInstance.getUsername()) {
+                    return response.status = 401
+                }
+                def body =  request.getJSON()
+                if (!userInstance || !body.username || !body.password ) {
+                    return response.status = 404
+                }
+                Role roleCurrentUser = ((User)springSecurityService.getCurrentUser()).getAuthorities()[0]
+                def res = userApiService.put(userInstance, body, roleCurrentUser)
+                return response.status = res
+                break;
+            case "PATCH":
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR'
+                        || currentUser != userInstance.getUsername()) {
+                    return response.status = 401
+                }
+                def body =  request.getJSON()
+                Role roleCurrentUser = ((User)springSecurityService.getCurrentUser()).getAuthorities()[0]
+                def res = userApiService.patch(userInstance, body, roleCurrentUser)
+                return response.status = res
+                break;
+            case "DELETE":
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR'
+                        || currentUser != userInstance.getUsername()) {
+                    return response.status = 401
+                }
+                userInstance.delete(flush: true)
+                return response.status = 200
+                break;
+            default:
+                return response.status = 405
+                break;
+        }
+    }
+
+
+    /**
+     * Collection
+     * POST / GET
+     */
     def annonces() {
+        User currentUser = springSecurityService.getCurrentUser()
+        Role role = currentUser.getAuthorities()[0]
+        def annonces = annonceService.list()
         switch (request.getMethod()) {
-            case "POST":
-                def annonceInstance = new Annonce(request.JSON)
-                if (annonceInstance.save()) {
-                    response.status = 201 // Created
-                    render annonceInstance as JSON
-                } else {
-                    response.status = 500
-                    // Internal Server Error
-                    render "Could not create new Annonce due to errors:\n ${annonceInstance.errors} \n ${params.user}"
-                }
-                break
-        }
-    }
 
-
-    // CRUD Illustration
-
-    // Methods: GET, PUT, DELETE, PATCH
-    def illustrations() {
-        switch (request.getMethod()) {
-            case "POST":
-                //("print")
-                def illustrationInstance = new Illustration(request.JSON)
-                if (illustrationInstance.save()) {
-                    response.status = 201 // Created
-                    render illustrationInstance as JSON
-                } else {
-                    response.status = 500
-                    // Internal Server Error
-                    render "Could not create new Illustration due to errors:\n ${illustrationInstance.errors} \n ${params.user}"
-                }
-                break
             case "GET":
-                def illustrationInstance = Illustration.findAll()
-                if (!illustrationInstance)
-                    return response.status = 404
-                withFormat {
-                    json { render illustrationInstance as JSON }
-                    xml { render illustrationInstance as XML }
-                }
-                break
-            case "DELETE":
-                if (!params.id)
-                    return response.status = 400
-                else {
-                    def illustrationInstance = Illustration.get(params.id)
-                    illustrationInstance.delete(flush: true)
-                    return response.status = 200
-                }
-                break
+                renderThis(request.getHeader("Accept"), annonces)
+                break;
+
+            case "POST":
+                def file = request.getFile('illustration')
+                def src = grailsApplication.config.illustrations.basePath
+                int result = annonceApiService.postAnnonce(params, file, src)
+                return response.status = result
+                break;
+
             default:
                 return response.status = 405
-                break
-        }
-    }
-    // Get illustration by Annonce
-    def illustrationByAnnonce() {
-        switch (request.getMethod()) {
-            case "GET":
-                if (!params.id)
-                    return response.status = 400
-                def illustrationInstance = Annonce.findById(params.id).illustrations
-                if (!illustrationInstance)
-                    return response.status = 404
-                withFormat {
-                    json { render illustrationInstance as JSON }
-                    xml { render illustrationInstance as XML }
-                }
-                break
-            default:
-                return response.status = 405
-                break
+                break;
         }
         return response.status = 406
     }
 
+
+    def users() {
+
+        User currentUser = springSecurityService.getCurrentUser()
+        Role role = currentUser.getAuthorities()[0]
+
+        System.out.println(">>>>> methods " + request.getMethod())
+        switch (request.getMethod()) {
+
+            case "GET":
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR') {
+                    return response.status = 401
+                }
+                def users = userService.list()
+                renderThis(request.getHeader("Accept"), users)
+                break;
+
+            case "POST":
+                if (role.getAuthority() != 'ROLE_ADMIN' || role.getAuthority() != 'ROLE_MODERATEUR') {
+                    return response.status = 401
+                }
+                if (User.findByUsername(params.username))
+                    return response.status = 400
+                if ( params == [:] || params.username == null || params.password == null )
+                    return response.status = 400
+
+
+                int res = userApiService.post(params)
+                return response.status = res
+                break;
+
+            default:
+                return response.status = 405
+                break;
+        }
+        return response.status = 406
+    }
+
+
+    def renderThis(String acceptHeader, Object object) {
+        System.out.println(">>>>>>> header " + acceptHeader)
+        if (acceptHeader == '*/*')
+            acceptHeader = 'application/json'
+        switch (acceptHeader) {
+            case 'xml':
+            case 'text/xml':
+            case 'application/xml':
+                render object as XML
+                break;
+            case 'json':
+            case 'text/json':
+            case 'application/json':
+                render object as JSON
+                break;
+        }
+    }
+
+    def responseStatus(String test, Object source ){
+
+        switch (test){
+            case 'id':
+                System.out.println(">>>>> Verification ID ")
+                if (!params.id)
+                    return response.status = 400
+                break;
+            case 'SourceNotExist':
+                System.out.println(">>>>> Verification Source ")
+                if (source == null) {
+                    System.out.println(">>>>> Source "+ source)
+                    return response.status = 404
+                }
+                break;
+            case 'NotAcceptable':
+                System.out.println(">>>>> Method no accept ")
+                return response.status = 405
+                break;
+            default:
+                return response.status = 406
+                break;
+
+        }
+    }
 }
